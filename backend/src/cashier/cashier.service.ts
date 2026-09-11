@@ -1,0 +1,78 @@
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import * as bcrypt from 'bcrypt';
+import { Repository } from 'typeorm';
+import { CreateCashierDto } from './dto/create-cashier.dto';
+import { Cashier } from './entities/cashier.entity';
+
+@Injectable()
+export class CashierService {
+  constructor(
+    @InjectRepository(Cashier)
+    private readonly cashierRepository: Repository<Cashier>,
+  ) {}
+
+  async create(createCashierDto: CreateCashierDto) {
+    const { username, password } = createCashierDto;
+    const normalizedUsername = username.trim();
+
+    const existingCashier =
+      await this.cashierRepository.findOne({
+        where: {
+          username: normalizedUsername,
+        },
+      });
+
+    if (existingCashier) {
+      throw new ConflictException(
+        'Cashier with this username already exists',
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(
+      password,
+      10,
+    );
+
+    const cashier = this.cashierRepository.create({
+      username: normalizedUsername,
+      password: hashedPassword,
+    });
+
+    const savedCashier =
+      await this.cashierRepository.save(cashier);
+
+    const { password: _, ...result } = savedCashier;
+
+    return result;
+  }
+
+  async findByUsername(username: string) {
+    return this.cashierRepository.findOne({
+      where: {
+        username: username.trim(),
+      },
+    });
+  }
+
+  async findById(id: number) {
+    const cashier =
+      await this.cashierRepository.findOne({
+        where: {
+          id,
+        },
+      });
+
+    if (!cashier) {
+      throw new NotFoundException('Cashier not found');
+    }
+
+    const { password: _, ...result } = cashier;
+
+    return result;
+  }
+}

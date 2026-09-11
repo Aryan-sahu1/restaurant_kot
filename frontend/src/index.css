@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "tailwindcss";
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+}
+
+body {
+  /* IMPORTANT: do NOT use display:flex / place-items:center here.
+     That default Vite style is what pushes the header card and
+     KotApp card apart into two separate boxes on wide screens. */
+  display: block;
+}
