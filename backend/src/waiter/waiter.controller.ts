@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -50,5 +52,20 @@ export class WaiterController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.waiterService.findById(id);
+  }
+
+  @Patch(':id')
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() createWaiterDto: CreateWaiterDto,
+  ) {
+    return this.waiterService.update(id, createWaiterDto);
+  }
+
+  @Delete(':id')
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.waiterService.remove(id);
   }
 }

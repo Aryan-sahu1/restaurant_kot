@@ -33,6 +33,7 @@ export class JwtStrategy extends PassportStrategy(
     sub: number;
     username: string;
     role: string;
+    type?: string;
   }) {
     const cashier =
       await this.cashierService.findById(

@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MenuModule } from './menu/menu.module';
 import { KotModule } from './kot/kot.module';
-import { CustomerModule } from './customer/customer.module';
 import { AuthModule } from './auth/auth.module';
 import { WaiterModule } from './waiter/waiter.module';
 import { CashierModule } from './cashier/cashier.module';
 import { TableNoModule } from './table-no/table-no.module';
+import { BillModule } from './bill/bill.module';
 
 @Module({
   imports: [
@@ -29,10 +29,10 @@ import { TableNoModule } from './table-no/table-no.module';
 
     MenuModule,
     KotModule,
-    CustomerModule,
     CashierModule,
     WaiterModule,
     TableNoModule,
+    BillModule,
     AuthModule,
   ],
 })

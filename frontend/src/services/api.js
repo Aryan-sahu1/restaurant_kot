@@ -20,7 +20,16 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('cashier_access_token');
+  const adminToken = localStorage.getItem('admin_access_token');
+  const cashierToken = localStorage.getItem('cashier_access_token');
+  const isAdminRequest =
+    config.url?.startsWith('/cashiers') ||
+    config.url?.startsWith('/waiters') ||
+    config.url?.startsWith('/menu') ||
+    config.url?.startsWith('/table-no') ||
+    config.url?.startsWith('/kots') ||
+    config.url?.startsWith('/bill');
+  const token = isAdminRequest && adminToken ? adminToken : cashierToken;
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

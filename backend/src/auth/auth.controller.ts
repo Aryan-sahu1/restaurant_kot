@@ -22,4 +22,14 @@ export class AuthController {
       loginCashierDto.password,
     );
   }
+
+  @Post('admin/login')
+  async adminLogin(
+    @Body() loginCashierDto: LoginCashierDto,
+  ) {
+    return this.authService.adminLogin(
+      loginCashierDto.username,
+      loginCashierDto.password,
+    );
+  }
 }

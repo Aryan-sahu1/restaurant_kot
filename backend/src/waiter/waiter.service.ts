@@ -73,4 +73,56 @@ export class WaiterService {
       },
     });
   }
+
+  async update(id: number, createWaiterDto: CreateWaiterDto) {
+    const waiter = await this.waiterRepository.findOne({
+      where: {
+        id,
+      },
+    });
+
+    if (!waiter) {
+      throw new NotFoundException(
+        'Waiter not found',
+      );
+    }
+
+    const normalizedCode = createWaiterDto.code.trim();
+    const existingWaiter = await this.waiterRepository.findOne({
+      where: {
+        code: normalizedCode,
+      },
+    });
+
+    if (existingWaiter && existingWaiter.id !== id) {
+      throw new ConflictException(
+        'Waiter with this code already exists',
+      );
+    }
+
+    waiter.name = createWaiterDto.name.trim();
+    waiter.code = normalizedCode;
+
+    return this.waiterRepository.save(waiter);
+  }
+
+  async remove(id: number) {
+    const waiter = await this.waiterRepository.findOne({
+      where: {
+        id,
+      },
+    });
+
+    if (!waiter) {
+      throw new NotFoundException(
+        'Waiter not found',
+      );
+    }
+
+    await this.waiterRepository.softDelete(id);
+
+    return {
+      message: 'Waiter deleted successfully',
+    };
+  }
 }

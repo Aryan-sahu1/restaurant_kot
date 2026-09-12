@@ -1,6 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { CreateMenuItemDto } from './dto/create-menu-item.dto';
+import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 import { MenuItem } from './entities/menu-item.entity';
 
 type MenuSearchParams = {
@@ -15,6 +20,17 @@ export class MenuService {
     @InjectRepository(MenuItem)
     private menuRepository: Repository<MenuItem>,
   ) {}
+
+  create(createMenuItemDto: CreateMenuItemDto) {
+    const menuItem = this.menuRepository.create({
+      name: createMenuItemDto.name.trim(),
+      code: createMenuItemDto.code?.trim() || null,
+      srate: createMenuItemDto.srate,
+      trate: createMenuItemDto.trate?.trim() || null,
+    });
+
+    return this.menuRepository.save(menuItem);
+  }
 
   findAll() {
     return this.menuRepository.find({
@@ -58,5 +74,53 @@ export class MenuService {
     return query
       .orderBy('menu.name', 'ASC')
       .getMany();
+  }
+
+  async update(id: number, updateMenuItemDto: UpdateMenuItemDto) {
+    const menuItem = await this.menuRepository.findOne({
+      where: {
+        id,
+      },
+    });
+
+    if (!menuItem) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    if (updateMenuItemDto.name !== undefined) {
+      menuItem.name = updateMenuItemDto.name.trim();
+    }
+
+    if (updateMenuItemDto.code !== undefined) {
+      menuItem.code = updateMenuItemDto.code.trim() || null;
+    }
+
+    if (updateMenuItemDto.srate !== undefined) {
+      menuItem.srate = updateMenuItemDto.srate;
+    }
+
+    if (updateMenuItemDto.trate !== undefined) {
+      menuItem.trate = updateMenuItemDto.trate.trim() || null;
+    }
+
+    return this.menuRepository.save(menuItem);
+  }
+
+  async remove(id: number) {
+    const menuItem = await this.menuRepository.findOne({
+      where: {
+        id,
+      },
+    });
+
+    if (!menuItem) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    await this.menuRepository.delete(id);
+
+    return {
+      message: 'Menu item deleted successfully',
+    };
   }
 }

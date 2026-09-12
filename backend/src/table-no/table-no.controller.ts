@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { CreateTableNoDto } from './dto/create-table-no.dto';
@@ -26,6 +27,14 @@ export class TableNoController {
     @Body() createTableNoDto: CreateTableNoDto,
   ) {
     return this.tableNoService.create(createTableNoDto);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() createTableNoDto: CreateTableNoDto,
+  ) {
+    return this.tableNoService.update(id, createTableNoDto);
   }
 
   @Delete(':id')

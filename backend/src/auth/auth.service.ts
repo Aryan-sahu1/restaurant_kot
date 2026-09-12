@@ -19,6 +19,21 @@ export class AuthService {
     username: string,
     password: string,
   ) {
+    return this.login(username, password, 'cashier');
+  }
+
+  async adminLogin(
+    username: string,
+    password: string,
+  ) {
+    return this.login(username, password, 'admin');
+  }
+
+  private async login(
+    username: string,
+    password: string,
+    type: 'admin' | 'cashier',
+  ) {
     const cashier =
       await this.cashierService.findByUsername(username);
 
@@ -40,10 +55,27 @@ export class AuthService {
       );
     }
 
+    if (type === 'admin' && cashier.type !== 'admin') {
+      throw new UnauthorizedException(
+        'Invalid username or password',
+      );
+    }
+
+    if (
+      type === 'cashier' &&
+      cashier.type &&
+      cashier.type !== 'cashier'
+    ) {
+      throw new UnauthorizedException(
+        'Invalid username or password',
+      );
+    }
+
     const payload = {
       sub: cashier.id,
       username: cashier.username,
-      role: 'cashier',
+      role: cashier.type || 'cashier',
+      type: cashier.type || 'cashier',
     };
 
     const accessToken =
@@ -57,6 +89,7 @@ export class AuthService {
       cashier: {
         id: cashier.id,
         username: cashier.username,
+        type: cashier.type || 'cashier',
       },
     };
   }

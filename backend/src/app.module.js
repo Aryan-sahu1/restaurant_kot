@@ -1,6 +1,4 @@
 "use strict";
-import { CustomerController } from './customer/customer.controller';
-import { CustomerModule } from './customer/customer.module';
 import { WaiterController } from './waiter/waiter.controller';
 import { WaiterService } from './waiter/waiter.service';
 import { WaiterModule } from './waiter/waiter.module';

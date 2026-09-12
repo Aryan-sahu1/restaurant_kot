@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { LockKeyhole, LogIn, UtensilsCrossed } from 'lucide-react';
 import api from '../services/api';
 
-export default function Login({ onLogin }) {
+export default function Login({
+  onLogin,
+  loginPath = '/auth/cashier/login',
+  title = 'Cashier Login',
+  subtitle = 'Login to access KOT',
+}) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,7 +19,7 @@ export default function Login({ onLogin }) {
     setIsLoading(true);
 
     try {
-      const { data } = await api.post('/auth/cashier/login', {
+      const { data } = await api.post(loginPath, {
         username: username.trim(),
         password,
       });
@@ -36,9 +41,9 @@ export default function Login({ onLogin }) {
         <div className="bg-neutral-900 text-white px-5 py-5 sm:px-6">
           <div className="flex items-center gap-2">
             <UtensilsCrossed size={22} />
-            <h1 className="text-xl font-semibold">Cashier Login</h1>
+            <h1 className="text-xl font-semibold">{title}</h1>
           </div>
-          <p className="text-sm text-neutral-300 mt-1">Login to access KOT</p>
+          <p className="text-sm text-neutral-300 mt-1">{subtitle}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4">

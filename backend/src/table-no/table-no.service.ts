@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateTableNoDto } from './dto/create-table-no.dto';
@@ -28,7 +31,34 @@ export class TableNoService {
     return this.tableNoRepository.save(tableNo);
   }
 
+  async update(id: number, createTableNoDto: CreateTableNoDto) {
+    const tableNo = await this.tableNoRepository.findOne({
+      where: {
+        id,
+      },
+    });
+
+    if (!tableNo) {
+      throw new NotFoundException('Table not found');
+    }
+
+    tableNo.name = createTableNoDto.name.trim();
+    tableNo.restaurant = createTableNoDto.restaurant?.trim() || null;
+
+    return this.tableNoRepository.save(tableNo);
+  }
+
   async remove(id: number) {
+    const tableNo = await this.tableNoRepository.findOne({
+      where: {
+        id,
+      },
+    });
+
+    if (!tableNo) {
+      throw new NotFoundException('Table not found');
+    }
+
     await this.tableNoRepository.softDelete(id);
 
     return {

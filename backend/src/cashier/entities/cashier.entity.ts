@@ -22,6 +22,11 @@ export class Cashier {
   @Column()
   password: string;
 
+  @Column({
+    default: 'cashier',
+  })
+  type: string;
+
   @CreateDateColumn()
   created_at: Date;
 

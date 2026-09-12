@@ -197,7 +197,7 @@ function Footer({ onSubmit, disabled, isSubmitting }) {
 }
 
 export default function KotApp({ tableNo, tableLabel, waiterId, waiterLabel, onKotGenerated }) {
-    const [kotNo] = useState(() => Math.floor(1000 + Math.random() * 9000));
+    const [kotNo, setKotNo] = useState(null);
     const [items, setItems] = useState([]);
     const [menuItems, setMenuItems] = useState([]);
     const [searchTerm, setSearchTerm] = useState("");
@@ -207,6 +207,15 @@ export default function KotApp({ tableNo, tableLabel, waiterId, waiterLabel, onK
     const [generatedKotId, setGeneratedKotId] = useState(null);
     const [isSubmittingKot, setIsSubmittingKot] = useState(false);
     const [sent, setSent] = useState(false);
+
+    const fetchNextKotNo = useCallback(async () => {
+        try {
+            const { data } = await api.get("/kots/next-number");
+            setKotNo(data.next_kot_no);
+        } catch {
+            setKotNo(null);
+        }
+    }, []);
 
     const fetchMenuItems = useCallback(async (term = "") => {
         setIsMenuLoading(true);
@@ -226,6 +235,26 @@ export default function KotApp({ tableNo, tableLabel, waiterId, waiterLabel, onK
         }
     }, []);
 
+    const downloadKotPdf = async (kotId) => {
+        const response = await api.get(`/kots/${kotId}/pdf`, {
+            params: {
+                size: "80",
+            },
+            responseType: "blob",
+        });
+        const url = window.URL.createObjectURL(new Blob([response.data], {
+            type: "application/pdf",
+        }));
+        const link = document.createElement("a");
+
+        link.href = url;
+        link.download = `kot-${kotId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    };
+
     useEffect(() => {
         const timeoutId = setTimeout(() => {
             fetchMenuItems(searchTerm);
@@ -233,6 +262,14 @@ export default function KotApp({ tableNo, tableLabel, waiterId, waiterLabel, onK
 
         return () => clearTimeout(timeoutId);
     }, [fetchMenuItems, searchTerm]);
+
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            fetchNextKotNo();
+        }, 0);
+
+        return () => clearTimeout(timeoutId);
+    }, [fetchNextKotNo]);
 
     const addItem = (menuItem) => {
         setSent(false);
@@ -286,6 +323,8 @@ export default function KotApp({ tableNo, tableLabel, waiterId, waiterLabel, onK
             });
 
             setGeneratedKotId(data.kot_id);
+            await downloadKotPdf(data.kot_id);
+            setKotNo(Number(data.kot_id) + 1);
             setSent(true);
             setItems([]);
             onKotGenerated?.();
@@ -299,7 +338,7 @@ export default function KotApp({ tableNo, tableLabel, waiterId, waiterLabel, onK
 
     return (
         <div className="w-full bg-white rounded-lg shadow-md overflow-hidden border border-neutral-200">
-            <Header kotNo={kotNo} tableNo={tableNo} tableLabel={tableLabel} waiterLabel={waiterLabel} />
+            <Header kotNo={kotNo || "..."} tableNo={tableNo} tableLabel={tableLabel} waiterLabel={waiterLabel} />
             {(!tableNo || !waiterId) && (
                 <div className="px-4 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">
                     Select table and waiter before sending the KOT.
@@ -322,7 +361,7 @@ export default function KotApp({ tableNo, tableLabel, waiterId, waiterLabel, onK
                     </div>
                     <OrderList items={items} onQtyChange={onQtyChange} onRemove={onRemove} />
                     <KotPrintPreview
-                        kotNo={kotNo}
+                        kotNo={kotNo || "..."}
                         tableNo={tableNo}
                         tableLabel={tableLabel}
                         waiterLabel={waiterLabel}
