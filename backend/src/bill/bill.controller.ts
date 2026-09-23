@@ -30,6 +30,32 @@ export class BillController {
     return this.billService.findByKotIds(kotIds);
   }
 
+  @Get('report')
+  report(
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.billService.report(startDate, endDate);
+  }
+
+  @Get('report/pdf')
+  async reportPdf(
+    @Query('start_date') startDate: string,
+    @Query('end_date') endDate: string,
+    @Query('type') type: 'kot' | 'bill' = 'kot',
+    @Res() response: Response,
+  ) {
+    const reportType = type === 'bill' ? 'bill' : 'kot';
+    const pdf = await this.billService.getReportPdf(startDate, endDate, reportType);
+
+    response.setHeader('Content-Type', 'application/pdf');
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${reportType}-report-${startDate || 'today'}-${endDate || startDate || 'today'}.pdf"`,
+    );
+    response.send(pdf);
+  }
+
   @Post('generate')
   generate(
     @Body() generateBillDto: GenerateBillDto,

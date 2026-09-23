@@ -1,11 +1,16 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 
 import { AuthService } from './auth.service';
 import { LoginCashierDto } from '../cashier/dto/login-cashier.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { ChangeAdminPasswordDto } from './dto/change-admin-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -30,6 +35,27 @@ export class AuthController {
     return this.authService.adminLogin(
       loginCashierDto.username,
       loginCashierDto.password,
+    );
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  me(@Req() req) {
+    return {
+      cashier: req.user,
+    };
+  }
+
+  @Post('admin/change-password')
+  @UseGuards(JwtAuthGuard)
+  changeAdminPassword(
+    @Req() req,
+    @Body() changeAdminPasswordDto: ChangeAdminPasswordDto,
+  ) {
+    return this.authService.changeAdminPassword(
+      req.user.id,
+      changeAdminPasswordDto.currentPassword,
+      changeAdminPasswordDto.newPassword,
     );
   }
 }

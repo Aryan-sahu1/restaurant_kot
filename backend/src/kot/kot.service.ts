@@ -190,10 +190,15 @@ export class KotService {
   }
 
   async totalCount() {
-    const kotCount = await this.kotRepository.count();
+    const totalKotCount = await this.kotRepository.count({
+      withDeleted: true,
+    });
+    const runningKotCount = await this.kotRepository.count();
 
     return {
-      kot_count: kotCount,
+      kot_count: totalKotCount,
+      total_kot_count: totalKotCount,
+      running_kot_count: runningKotCount,
     };
   }
 
@@ -296,6 +301,64 @@ export class KotService {
           }
         : null,
       created_at: kot.created_at,
+      date: selectedDate,
+      items: kot.items.map((item) => ({
+        menu_item_id: item.menu_item_id,
+        name: item.menuItem?.name || `Item ${item.menu_item_id}`,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+    }));
+  }
+
+  async myOldKots(cashierId: number, date?: string, waiterId?: string) {
+    const { selectedDate, startDate, endDate } =
+      getDateRange(date);
+    const parsedWaiterId = parseWaiterId(waiterId);
+
+    const query = this.kotRepository
+      .createQueryBuilder('kot')
+      .withDeleted()
+      .leftJoinAndSelect('kot.table', 'table')
+      .leftJoinAndSelect('kot.waiter', 'waiter')
+      .leftJoinAndSelect('kot.items', 'items')
+      .leftJoinAndSelect('items.menuItem', 'menuItem')
+      .where('kot.cashier_id = :cashierId', { cashierId })
+      .andWhere('kot.deleted_at IS NOT NULL')
+      .andWhere('kot.created_at BETWEEN :startDate AND :endDate', {
+        startDate,
+        endDate,
+      })
+      .orderBy('kot.deleted_at', 'DESC');
+
+    if (parsedWaiterId) {
+      query.andWhere('kot.waiter_id = :waiterId', {
+        waiterId: parsedWaiterId,
+      });
+    }
+
+    const kots = await query.getMany();
+
+    return kots.map((kot) => ({
+      id: kot.id,
+      table_no: kot.table_no,
+      table: kot.table
+        ? {
+            id: kot.table.id,
+            name: kot.table.name,
+            restaurant: kot.table.restaurant,
+          }
+        : null,
+      status: kot.status,
+      waiter: kot.waiter
+        ? {
+            id: kot.waiter.id,
+            name: kot.waiter.name,
+            code: kot.waiter.code,
+          }
+        : null,
+      created_at: kot.created_at,
+      deleted_at: kot.deleted_at,
       date: selectedDate,
       items: kot.items.map((item) => ({
         menu_item_id: item.menu_item_id,

@@ -20,16 +20,14 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  if (config.headers?.Authorization) {
+    return config;
+  }
+
   const adminToken = localStorage.getItem('admin_access_token');
   const cashierToken = localStorage.getItem('cashier_access_token');
-  const isAdminRequest =
-    config.url?.startsWith('/cashiers') ||
-    config.url?.startsWith('/waiters') ||
-    config.url?.startsWith('/menu') ||
-    config.url?.startsWith('/table-no') ||
-    config.url?.startsWith('/kots') ||
-    config.url?.startsWith('/bill');
-  const token = isAdminRequest && adminToken ? adminToken : cashierToken;
+  const isAdminPage = window.location.pathname.startsWith('/admin');
+  const token = isAdminPage && adminToken ? adminToken : cashierToken;
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -37,5 +35,18 @@ api.interceptors.request.use((config) => {
 
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const isLoginRequest = error.config?.url?.includes('/login');
+
+    if (error.response?.status === 401 && !isLoginRequest) {
+      window.dispatchEvent(new CustomEvent('auth:invalid'));
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 export default api;

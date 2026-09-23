@@ -160,4 +160,31 @@ export class CashierService {
 
     return result;
   }
+
+  async findByIdWithPassword(id: number) {
+    return this.cashierRepository.findOne({
+      where: {
+        id,
+      },
+    });
+  }
+
+  async updatePassword(id: number, password: string) {
+    const cashier = await this.cashierRepository.findOne({
+      where: {
+        id,
+      },
+    });
+
+    if (!cashier) {
+      throw new NotFoundException('Cashier not found');
+    }
+
+    cashier.password = await bcrypt.hash(password, 10);
+
+    const savedCashier = await this.cashierRepository.save(cashier);
+    const { password: _, ...result } = savedCashier;
+
+    return result;
+  }
 }

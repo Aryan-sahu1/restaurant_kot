@@ -96,4 +96,18 @@ export class KotController {
       waiterId,
     );
   }
+
+  @Get('my-old-kots')
+  @UseGuards(JwtAuthGuard)
+  myOldKots(
+    @Req() req,
+    @Query('date') date?: string,
+    @Query('waiter_id') waiterId?: string,
+  ) {
+    return this.kotService.myOldKots(
+      req.user.id,
+      date,
+      waiterId,
+    );
+  }
 }

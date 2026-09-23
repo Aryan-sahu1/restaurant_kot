@@ -60,11 +60,30 @@ function groupKotsByTable(kots) {
   );
 }
 
+function getCurrentBillForTable(tableGroup, billsByTableNo) {
+  const bill = billsByTableNo[tableGroup.tableNo];
+
+  if (!bill?.kot_ids?.length) {
+    return null;
+  }
+
+  const billKotIds = new Set(bill.kot_ids.map((id) => Number(id)));
+  const includesAllTableKots = tableGroup.kots.every((kot) =>
+    billKotIds.has(Number(kot.id)),
+  );
+
+  return includesAllTableKots ? bill : null;
+}
+
+function getDisplayAmount(tableGroup, bill) {
+  return Number(bill?.total_amount || tableGroup.total);
+}
+
 function TableBillControls({ tableGroup, bill, onGenerateBill, onSettleBill }) {
   const [cash, setCash] = useState(bill?.cash ? String(bill.cash) : '');
   const [online, setOnline] = useState(bill?.online ? String(bill.online) : '');
   const [settlementError, setSettlementError] = useState('');
-  const total = Number(bill?.total_amount || tableGroup.total);
+  const total = getDisplayAmount(tableGroup, bill);
   const paid = Number(cash || 0) + Number(online || 0);
   const balance = total - paid;
 
@@ -74,7 +93,7 @@ function TableBillControls({ tableGroup, bill, onGenerateBill, onSettleBill }) {
     setSettlementError('');
   }, [bill]);
 
-  const handleSettlement = () => {
+  const handleSettlement = async () => {
     if (!bill) {
       setSettlementError('Bill generate first.');
       return;
@@ -88,7 +107,11 @@ function TableBillControls({ tableGroup, bill, onGenerateBill, onSettleBill }) {
     }
 
     setSettlementError('');
-    onSettleBill(tableGroup, bill, Number(cash || 0), Number(online || 0));
+    try {
+      await onSettleBill(tableGroup, bill, Number(cash || 0), Number(online || 0));
+    } catch (err) {
+      setSettlementError(err.message || 'Unable to settle bill.');
+    }
   };
 
   return (
@@ -180,6 +203,7 @@ function TableBillControls({ tableGroup, bill, onGenerateBill, onSettleBill }) {
 function TableHistoryCard({ tableGroup, bill, onGenerateBill, onSettleBill }) {
   const items = Array.from(tableGroup.items.values());
   const waiters = Array.from(tableGroup.waiters.values());
+  const displayAmount = getDisplayAmount(tableGroup, bill);
 
   return (
     <div className="bg-white border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
@@ -259,7 +283,181 @@ function TableHistoryCard({ tableGroup, bill, onGenerateBill, onSettleBill }) {
   );
 }
 
-export default function KotHistoryPage({ initialDate, onBack }) {
+function RunningTableModal({ tableGroup, bill, onClose, onGenerateBill, onSettleBill }) {
+  if (!tableGroup) {
+    return null;
+  }
+
+  const items = Array.from(tableGroup.items.values());
+  const waiters = Array.from(tableGroup.waiters.values());
+  const displayAmount = getDisplayAmount(tableGroup, bill);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between bg-neutral-900 text-white px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold truncate">{tableGroup.tableName}</div>
+            <div className="text-xs text-neutral-300">
+              {tableGroup.kots.length} KOT{tableGroup.kots.length !== 1 ? 's' : ''} | Rs. {displayAmount.toFixed(2)}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-white/10"
+            title="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="grid gap-2 sm:grid-cols-3 text-xs text-neutral-500 mb-3">
+            <div>
+              <span className="block font-medium text-neutral-700">Table</span>
+              {tableGroup.tableName}
+            </div>
+            <div>
+              <span className="block font-medium text-neutral-700">Waiter</span>
+              {waiters.length > 0 ? waiters.join(', ') : '-'}
+            </div>
+            <div>
+              <span className="block font-medium text-neutral-700">Last Order</span>
+              {new Date(tableGroup.latestAt).toLocaleString('en-IN', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {tableGroup.kots.map((kot) => (
+              <span
+                key={kot.id}
+                className="rounded bg-orange-50 border border-orange-100 px-2 py-1 text-[11px] font-medium text-orange-700"
+              >
+                KOT #{kot.id}
+              </span>
+            ))}
+          </div>
+
+          <div className="border border-neutral-200 rounded-md overflow-hidden">
+            <div className="grid grid-cols-[1fr_56px_80px] gap-2 bg-neutral-50 px-3 py-2 text-[11px] font-semibold uppercase text-neutral-500">
+              <span>Item</span>
+              <span className="text-right">Qty</span>
+              <span className="text-right">Amount</span>
+            </div>
+            <div className="divide-y divide-neutral-100">
+              {items.map((item) => (
+                <div
+                  key={`${item.name}-${item.price}`}
+                  className="grid grid-cols-[1fr_56px_80px] gap-2 px-3 py-2 text-xs"
+                >
+                  <span className="font-medium text-neutral-800">{item.name}</span>
+                  <span className="text-right text-neutral-500">x{item.quantity}</span>
+                  <span className="text-right text-neutral-900">Rs. {item.total.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <TableBillControls
+            tableGroup={tableGroup}
+            bill={bill}
+            onGenerateBill={onGenerateBill}
+            onSettleBill={onSettleBill}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KotDetailModal({ kot, onClose }) {
+  if (!kot) {
+    return null;
+  }
+
+  const tableName = kot.table?.name || `Table ${kot.table_no}`;
+  const total = kot.items.reduce(
+    (sum, item) => sum + Number(item.price) * Number(item.quantity),
+    0,
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-md rounded-lg bg-white shadow-xl overflow-hidden">
+        <div className="flex items-center justify-between bg-neutral-900 text-white px-4 py-3">
+          <div>
+            <div className="text-sm font-semibold">KOT #{kot.id}</div>
+            <div className="text-xs text-neutral-300">{tableName}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-white/10"
+            title="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-4">
+          <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500 mb-3">
+            <div>
+              <span className="block font-medium text-neutral-700">Waiter</span>
+              {kot.waiter?.name || '-'}
+            </div>
+            <div>
+              <span className="block font-medium text-neutral-700">Created</span>
+              {new Date(kot.created_at).toLocaleString('en-IN', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              })}
+            </div>
+            <div>
+              <span className="block font-medium text-neutral-700">Settled</span>
+              {kot.deleted_at
+                ? new Date(kot.deleted_at).toLocaleString('en-IN', {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })
+                : '-'}
+            </div>
+            <div>
+              <span className="block font-medium text-neutral-700">Total</span>
+              Rs. {total.toFixed(2)}
+            </div>
+          </div>
+
+          <div className="border border-neutral-200 rounded-md overflow-hidden">
+            <div className="grid grid-cols-[1fr_56px_80px] gap-2 bg-neutral-50 px-3 py-2 text-[11px] font-semibold uppercase text-neutral-500">
+              <span>Item</span>
+              <span className="text-right">Qty</span>
+              <span className="text-right">Amount</span>
+            </div>
+            <div className="divide-y divide-neutral-100">
+              {kot.items.map((item) => (
+                <div
+                  key={`${kot.id}-${item.menu_item_id}`}
+                  className="grid grid-cols-[1fr_56px_80px] gap-2 px-3 py-2 text-xs"
+                >
+                  <span className="font-medium text-neutral-800">{item.name}</span>
+                  <span className="text-right text-neutral-500">x{item.quantity}</span>
+                  <span className="text-right text-neutral-900">
+                    Rs. {(Number(item.price) * Number(item.quantity)).toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function KotHistoryPage({ initialDate, initialMode = 'running', onBack }) {
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [waiters, setWaiters] = useState([]);
   const [waiterId, setWaiterId] = useState('');
@@ -269,10 +467,14 @@ export default function KotHistoryPage({ initialDate, onBack }) {
   const [isWaiterLoading, setIsWaiterLoading] = useState(false);
   const [waiterError, setWaiterError] = useState('');
   const [kots, setKots] = useState([]);
+  const [oldKots, setOldKots] = useState([]);
+  const [selectedOldKot, setSelectedOldKot] = useState(null);
+  const [selectedTableGroup, setSelectedTableGroup] = useState(null);
   const [billsByTableNo, setBillsByTableNo] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const waiterDropdownRef = useRef(null);
+  const isOldMode = initialMode === 'old';
 
   const selectedWaiter = waiters.find((waiter) => String(waiter.id) === String(waiterId));
   const filteredWaiters = waiters.filter((waiter) => {
@@ -306,14 +508,17 @@ export default function KotHistoryPage({ initialDate, onBack }) {
     setError('');
 
     try {
-      const { data } = await api.get('/kots/my-kots', {
-        params: {
-          date: selectedDate,
-          ...(waiterId ? { waiter_id: waiterId } : {}),
-        },
-      });
+      const params = {
+        date: selectedDate,
+        ...(waiterId ? { waiter_id: waiterId } : {}),
+      };
+      const [{ data }, oldKotsResponse] = await Promise.all([
+        api.get('/kots/my-kots', { params }),
+        api.get('/kots/my-old-kots', { params }),
+      ]);
 
       setKots(data);
+      setOldKots(oldKotsResponse.data);
 
       const kotIds = data.map((kot) => kot.id);
       if (kotIds.length > 0) {
@@ -398,6 +603,27 @@ export default function KotHistoryPage({ initialDate, onBack }) {
       .filter(Boolean)
       .some((value) => value.toLowerCase().includes(search));
   });
+  const filteredOldKots = oldKots.filter((kot) => {
+    const search = tableSearch.trim().toLowerCase();
+
+    if (!search) {
+      return true;
+    }
+
+    return [
+      String(kot.table_no),
+      kot.table?.name,
+      kot.table?.restaurant,
+      String(kot.id),
+    ]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(search));
+  });
+  const oldGrandTotal = filteredOldKots.reduce(
+    (sum, kot) =>
+      sum + kot.items.reduce((itemSum, item) => itemSum + Number(item.price) * Number(item.quantity), 0),
+    0,
+  );
 
   const downloadBillPdf = async (bill) => {
     const response = await api.get(`/bill/${bill.id}/pdf`, {
@@ -419,13 +645,11 @@ export default function KotHistoryPage({ initialDate, onBack }) {
     window.URL.revokeObjectURL(url);
   };
 
-  const generateBill = async (tableGroup, existingBill) => {
+  const generateBill = async (tableGroup) => {
     try {
-      const data = existingBill || (
-        await api.post('/bill/generate', {
-          kot_ids: tableGroup.kots.map((kot) => kot.id),
-        })
-      ).data;
+      const { data } = await api.post('/bill/generate', {
+        kot_ids: tableGroup.kots.map((kot) => kot.id),
+      });
 
       setBillsByTableNo((currentBills) => ({
         ...currentBills,
@@ -439,11 +663,22 @@ export default function KotHistoryPage({ initialDate, onBack }) {
 
   const settleBill = async (tableGroup, existingBill, cash, online) => {
     try {
-      const bill = existingBill || (
-        await api.post('/bill/generate', {
-          kot_ids: tableGroup.kots.map((kot) => kot.id),
-        })
-      ).data;
+      setError('');
+      const { data: bill } = await api.post('/bill/generate', {
+        kot_ids: tableGroup.kots.map((kot) => kot.id),
+      });
+      const latestTotal = Number(bill.total_amount || 0);
+      const paidTotal = Number(cash || 0) + Number(online || 0);
+
+      setBillsByTableNo((currentBills) => ({
+        ...currentBills,
+        [bill.table_no]: bill,
+      }));
+
+      if (Math.abs(paidTotal - latestTotal) > 0.009) {
+        throw new Error(`Bill amount refresh ho gaya hai. Latest amount Rs. ${latestTotal.toFixed(2)} pay karo.`);
+      }
+
       const { data } = await api.patch(`/bill/${bill.id}/settle`, {
         cash,
         online,
@@ -457,8 +692,9 @@ export default function KotHistoryPage({ initialDate, onBack }) {
       setKots((currentKots) =>
         currentKots.filter((kot) => !data.kot_ids.includes(kot.id)),
       );
+      setSelectedTableGroup(null);
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to settle bill.');
+      throw new Error(err.response?.data?.message || 'Unable to settle bill.');
     }
   };
 
@@ -493,10 +729,12 @@ export default function KotHistoryPage({ initialDate, onBack }) {
             </div>
             <div>
               <div className="text-[11px] uppercase tracking-wide text-orange-700 font-semibold">
-                KOT History
+                {isOldMode ? 'Old KOTs' : 'KOT History'}
               </div>
               <div className="text-lg font-semibold text-neutral-900">
-                {filteredTableGroups.length} Table{filteredTableGroups.length !== 1 ? 's' : ''} | {kots.length} KOT{kots.length !== 1 ? 's' : ''} | Rs. {grandTotal.toFixed(2)}
+                {isOldMode
+                  ? `${filteredOldKots.length} settled KOT${filteredOldKots.length !== 1 ? 's' : ''} | Rs. ${oldGrandTotal.toFixed(2)}`
+                  : `${filteredTableGroups.length} Table${filteredTableGroups.length !== 1 ? 's' : ''} | ${kots.length} KOT${kots.length !== 1 ? 's' : ''} | Rs. ${grandTotal.toFixed(2)}`}
               </div>
             </div>
             </div>
@@ -655,31 +893,178 @@ export default function KotHistoryPage({ initialDate, onBack }) {
           <div className="py-10 text-center text-sm text-red-500">{error}</div>
         )}
 
-        {!isLoading && !error && kots.length === 0 && (
+        {!isLoading && !error && !isOldMode && kots.length === 0 && (
           <div className="py-10 text-center text-sm text-neutral-400">
             No KOTs found for this date.
           </div>
         )}
 
-        {!isLoading && !error && kots.length > 0 && filteredTableGroups.length === 0 && (
+        {!isLoading && !error && isOldMode && oldKots.length === 0 && (
+          <div className="py-10 text-center text-sm text-neutral-400">
+            No old KOTs found for this date.
+          </div>
+        )}
+
+        {!isLoading && !error && !isOldMode && kots.length > 0 && filteredTableGroups.length === 0 && (
           <div className="py-10 text-center text-sm text-neutral-400">
             No tables match your search.
           </div>
         )}
 
-        {!isLoading && !error && filteredTableGroups.length > 0 && (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredTableGroups.map((tableGroup) => (
-              <TableHistoryCard
-                key={tableGroup.tableNo}
-                tableGroup={tableGroup}
-                bill={billsByTableNo[tableGroup.tableNo]}
-                onGenerateBill={generateBill}
-                onSettleBill={settleBill}
-              />
-            ))}
-          </div>
+        {!isLoading && !error && !isOldMode && filteredTableGroups.length > 0 && (
+          <section className="bg-white border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-neutral-100">
+              <div className="text-[11px] uppercase tracking-wide text-neutral-500 font-semibold">
+                Running KOTs
+              </div>
+              <div className="text-sm font-semibold text-neutral-900">
+                {filteredTableGroups.length} running table{filteredTableGroups.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-neutral-50 text-neutral-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">Table</th>
+                    <th className="px-3 py-2 text-left font-semibold">KOTs</th>
+                    <th className="px-3 py-2 text-left font-semibold">Waiter</th>
+                    <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                    <th className="px-3 py-2 text-left font-semibold">Last Order</th>
+                    <th className="px-3 py-2 text-left font-semibold">Bill</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {filteredTableGroups.map((tableGroup) => {
+                    const waiters = Array.from(tableGroup.waiters.values());
+                    const bill = getCurrentBillForTable(tableGroup, billsByTableNo);
+                    const displayAmount = getDisplayAmount(tableGroup, bill);
+
+                    return (
+                      <tr
+                        key={tableGroup.tableNo}
+                        onClick={() => setSelectedTableGroup(tableGroup)}
+                        className="cursor-pointer hover:bg-orange-50"
+                      >
+                        <td className="px-3 py-2 font-medium text-neutral-900">
+                          <span className="block">{tableGroup.tableName}</span>
+                          {tableGroup.restaurant && (
+                            <span className="block text-[11px] font-normal text-neutral-400">
+                              {tableGroup.restaurant}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-neutral-700">
+                          {tableGroup.kots.length} KOT{tableGroup.kots.length !== 1 ? 's' : ''}
+                        </td>
+                        <td className="px-3 py-2 text-neutral-500">
+                          {waiters.length > 0 ? waiters.join(', ') : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-neutral-900">
+                          Rs. {displayAmount.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-2 text-neutral-500">
+                          {new Date(tableGroup.latestAt).toLocaleString('en-IN', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`rounded px-2 py-1 text-[11px] font-medium ${
+                            bill
+                              ? 'bg-green-50 text-green-700 border border-green-100'
+                              : 'bg-amber-50 text-amber-700 border border-amber-100'
+                          }`}
+                          >
+                            {bill ? `Bill #${bill.id}` : 'Pending'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
+
+        {!isLoading && !error && isOldMode && oldKots.length > 0 && (
+          <section className="bg-white border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-neutral-100">
+              <div className="text-[11px] uppercase tracking-wide text-neutral-500 font-semibold">
+                Old KOTs
+              </div>
+              <div className="text-sm font-semibold text-neutral-900">
+                {filteredOldKots.length} settled KOT{filteredOldKots.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            {filteredOldKots.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-neutral-400">
+                No old KOTs match your search.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-neutral-50 text-neutral-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">KOT</th>
+                      <th className="px-3 py-2 text-left font-semibold">Table</th>
+                      <th className="px-3 py-2 text-left font-semibold">Waiter</th>
+                      <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                      <th className="px-3 py-2 text-left font-semibold">Settled</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {filteredOldKots.map((kot) => {
+                      const total = kot.items.reduce(
+                        (sum, item) => sum + Number(item.price) * Number(item.quantity),
+                        0,
+                      );
+
+                      return (
+                        <tr
+                          key={kot.id}
+                          onClick={() => setSelectedOldKot(kot)}
+                          className="cursor-pointer hover:bg-orange-50"
+                        >
+                          <td className="px-3 py-2 font-medium text-neutral-900">#{kot.id}</td>
+                          <td className="px-3 py-2 text-neutral-700">
+                            {kot.table?.name || `Table ${kot.table_no}`}
+                          </td>
+                          <td className="px-3 py-2 text-neutral-500">{kot.waiter?.name || '-'}</td>
+                          <td className="px-3 py-2 text-right text-neutral-900">
+                            Rs. {total.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-neutral-500">
+                            {kot.deleted_at
+                              ? new Date(kot.deleted_at).toLocaleString('en-IN', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })
+                              : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
+        <KotDetailModal
+          kot={selectedOldKot}
+          onClose={() => setSelectedOldKot(null)}
+        />
+        <RunningTableModal
+          tableGroup={selectedTableGroup}
+          bill={selectedTableGroup ? getCurrentBillForTable(selectedTableGroup, billsByTableNo) : null}
+          onClose={() => setSelectedTableGroup(null)}
+          onGenerateBill={generateBill}
+          onSettleBill={settleBill}
+        />
       </div>
     </main>
   );

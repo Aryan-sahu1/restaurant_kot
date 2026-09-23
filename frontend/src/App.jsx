@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  BarChart3,
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  Download,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Pencil,
@@ -37,9 +40,14 @@ function getTodayDate() {
   return `${year}-${month}-${day}`;
 }
 
+function formatMoney(value) {
+  return Number(value || 0).toFixed(2);
+}
+
 function KotMenuBar({
   refreshKey,
   onOpenHistory,
+  onOpenOldKots,
   tableNo,
   onTableNoChange,
   waiterId,
@@ -380,11 +388,11 @@ function KotMenuBar({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-orange-50/70 border border-orange-100 px-3 py-2">
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
         <button
           type="button"
           onClick={() => onOpenHistory(selectedDate)}
-          className="flex items-center gap-2 min-w-0 text-left"
+          className="flex items-center gap-2 min-w-0 text-left rounded-md bg-orange-50/70 border border-orange-100 px-3 py-2 hover:bg-orange-100"
         >
           <div className="w-9 h-9 rounded-md bg-orange-50 text-orange-700 flex items-center justify-center flex-shrink-0">
             <CalendarDays size={18} />
@@ -398,6 +406,25 @@ function KotMenuBar({
             </div>
           </div>
           <ChevronRight size={16} className="text-orange-600 flex-shrink-0" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenOldKots(selectedDate)}
+          className="flex items-center gap-2 min-w-0 text-left rounded-md bg-white border border-neutral-200 px-3 py-2 hover:bg-neutral-50"
+        >
+          <div className="w-9 h-9 rounded-md bg-neutral-100 text-neutral-700 flex items-center justify-center flex-shrink-0">
+            <ReceiptText size={18} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500 font-semibold">
+              Old KOTs
+            </div>
+            <div className="text-sm font-semibold text-neutral-900">
+              Settled history
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-neutral-500 flex-shrink-0" />
         </button>
 
         <button
@@ -454,6 +481,7 @@ function AdminDashboard({ admin, onLogout }) {
     menuItems: 0,
     tables: 0,
     kots: 0,
+    runningKots: 0,
   });
   const [adminLists, setAdminLists] = useState({
     cashiers: [],
@@ -463,6 +491,20 @@ function AdminDashboard({ admin, onLogout }) {
   });
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState('');
+  const [reportStartDate, setReportStartDate] = useState(getTodayDate);
+  const [reportEndDate, setReportEndDate] = useState(getTodayDate);
+  const [reportData, setReportData] = useState(null);
+  const [reportDownloadType, setReportDownloadType] = useState('kot');
+  const [isReportLoading, setIsReportLoading] = useState(false);
+  const [isReportDownloading, setIsReportDownloading] = useState(false);
+  const [reportError, setReportError] = useState('');
+  const [isAdminPasswordOpen, setIsAdminPasswordOpen] = useState(false);
+  const [currentAdminPassword, setCurrentAdminPassword] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
+  const [isAdminPasswordSaving, setIsAdminPasswordSaving] = useState(false);
+  const [adminPasswordMessage, setAdminPasswordMessage] = useState('');
+  const [adminPasswordError, setAdminPasswordError] = useState('');
 
   const fetchAdminStats = useCallback(async () => {
     setIsStatsLoading(true);
@@ -488,7 +530,8 @@ function AdminDashboard({ admin, onLogout }) {
         waiters: waiters.length,
         menuItems: menuItems.length,
         tables: tables.length,
-        kots: Number(kotsResponse.data.kot_count) || 0,
+        kots: Number(kotsResponse.data.total_kot_count ?? kotsResponse.data.kot_count) || 0,
+        runningKots: Number(kotsResponse.data.running_kot_count) || 0,
       });
       setAdminLists({
         cashiers,
@@ -510,6 +553,69 @@ function AdminDashboard({ admin, onLogout }) {
 
     return () => clearTimeout(timeoutId);
   }, [fetchAdminStats]);
+
+  const fetchReport = useCallback(async () => {
+    setIsReportLoading(true);
+    setReportError('');
+
+    try {
+      const { data } = await api.get('/bill/report', {
+        params: {
+          start_date: reportStartDate,
+          end_date: reportEndDate,
+        },
+      });
+
+      setReportData(data);
+    } catch (err) {
+      setReportError(err.response?.data?.message || 'Unable to load report.');
+    } finally {
+      setIsReportLoading(false);
+    }
+  }, [reportStartDate, reportEndDate]);
+
+  const downloadReportPdf = async () => {
+    setIsReportDownloading(true);
+    setReportError('');
+
+    try {
+      const response = await api.get('/bill/report/pdf', {
+        params: {
+          start_date: reportStartDate,
+          end_date: reportEndDate,
+          type: reportDownloadType,
+        },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data], {
+        type: 'application/pdf',
+      }));
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = `${reportDownloadType}-report-${reportStartDate}-${reportEndDate}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setReportError(err.response?.data?.message || 'Unable to download report PDF.');
+    } finally {
+      setIsReportDownloading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSection !== 'reports') {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      fetchReport();
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
+  }, [activeSection, fetchReport]);
 
   const saveCashier = async (event) => {
     event.preventDefault();
@@ -634,6 +740,42 @@ function AdminDashboard({ admin, onLogout }) {
     setCashierError('');
   };
 
+  const resetCashierForm = () => {
+    setEditingCashierId(null);
+    setUsername('');
+    setPassword('');
+  };
+
+  const changeAdminPassword = async (event) => {
+    event.preventDefault();
+    setAdminPasswordMessage('');
+    setAdminPasswordError('');
+
+    if (newAdminPassword !== confirmAdminPassword) {
+      setAdminPasswordError('New password and confirm password do not match.');
+      return;
+    }
+
+    setIsAdminPasswordSaving(true);
+
+    try {
+      await api.post('/auth/admin/change-password', {
+        currentPassword: currentAdminPassword,
+        newPassword: newAdminPassword,
+      });
+
+      setAdminPasswordMessage('Admin password changed successfully.');
+      setCurrentAdminPassword('');
+      setNewAdminPassword('');
+      setConfirmAdminPassword('');
+      setIsAdminPasswordOpen(false);
+    } catch (err) {
+      setAdminPasswordError(err.response?.data?.message || 'Unable to change admin password.');
+    } finally {
+      setIsAdminPasswordSaving(false);
+    }
+  };
+
   const startMenuEdit = (item) => {
     setEditingMenuItemId(item.id);
     setMenuName(item.name || '');
@@ -681,6 +823,7 @@ function AdminDashboard({ admin, onLogout }) {
     { id: 'cashiers', label: 'Cashiers', icon: UsersRound },
     { id: 'menu', label: 'Menu Items', icon: Utensils },
     { id: 'tables-waiters', label: 'Tables & Waiters', icon: Table2 },
+    { id: 'reports', label: 'Reports', icon: BarChart3 },
   ];
 
   const statCards = [
@@ -709,6 +852,11 @@ function AdminDashboard({ admin, onLogout }) {
       value: stats.kots,
       icon: ReceiptText,
     },
+    {
+      label: 'Running KOTs',
+      value: stats.runningKots,
+      icon: RefreshCw,
+    },
   ];
 
   return (
@@ -728,17 +876,117 @@ function AdminDashboard({ admin, onLogout }) {
               </h1>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="flex items-center gap-1.5 bg-neutral-50 border border-neutral-200 text-neutral-600 rounded-md px-3 py-2 text-xs font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors flex-shrink-0"
-          >
-            <LogOut size={14} />
-            Logout
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAdminPasswordOpen((value) => !value);
+                setAdminPasswordMessage('');
+                setAdminPasswordError('');
+              }}
+              className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 rounded-md px-3 py-2 text-xs font-medium hover:bg-orange-100 transition-colors"
+            >
+              <KeyRound size={14} />
+              Password
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="flex items-center gap-1.5 bg-neutral-50 border border-neutral-200 text-neutral-600 rounded-md px-3 py-2 text-xs font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+            >
+              <LogOut size={14} />
+              Logout
+            </button>
+          </div>
         </div>
 
-        <nav className="grid grid-cols-2 lg:grid-cols-4 gap-2 bg-white border border-neutral-200 rounded-xl shadow-sm p-2">
+        {(isAdminPasswordOpen || adminPasswordMessage || adminPasswordError) && (
+          <section className="bg-white border border-orange-200 rounded-lg shadow-sm p-4 sm:p-5">
+            {isAdminPasswordOpen && (
+              <form onSubmit={changeAdminPassword} className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label htmlFor="admin-current-password" className="block text-xs font-medium text-neutral-600 mb-1">
+                    Current Password
+                  </label>
+                  <input
+                    id="admin-current-password"
+                    type="password"
+                    className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={currentAdminPassword}
+                    onChange={(event) => setCurrentAdminPassword(event.target.value)}
+                    autoComplete="current-password"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="admin-new-password" className="block text-xs font-medium text-neutral-600 mb-1">
+                    New Password
+                  </label>
+                  <input
+                    id="admin-new-password"
+                    type="password"
+                    className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={newAdminPassword}
+                    onChange={(event) => setNewAdminPassword(event.target.value)}
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="admin-confirm-password" className="block text-xs font-medium text-neutral-600 mb-1">
+                    Confirm Password
+                  </label>
+                  <input
+                    id="admin-confirm-password"
+                    type="password"
+                    className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={confirmAdminPassword}
+                    onChange={(event) => setConfirmAdminPassword(event.target.value)}
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                  />
+                </div>
+                <div className="sm:col-span-3 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="submit"
+                    disabled={isAdminPasswordSaving}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-neutral-900 disabled:bg-neutral-300 text-white rounded-md px-4 py-2.5 font-medium text-sm hover:bg-neutral-800"
+                  >
+                    <KeyRound size={16} />
+                    {isAdminPasswordSaving ? 'Saving...' : 'Change Password'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAdminPasswordOpen(false);
+                      setCurrentAdminPassword('');
+                      setNewAdminPassword('');
+                      setConfirmAdminPassword('');
+                    }}
+                    className="w-full sm:w-auto border border-neutral-200 text-neutral-600 rounded-md px-4 py-2.5 font-medium text-sm hover:bg-neutral-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {(adminPasswordMessage || adminPasswordError) && (
+              <div className={`mt-3 text-sm font-medium rounded-md px-3 py-2 border ${
+                adminPasswordError
+                  ? 'text-red-600 bg-red-50 border-red-100'
+                  : 'text-green-700 bg-green-50 border-green-100'
+              }`}
+              >
+                {adminPasswordError || adminPasswordMessage}
+              </div>
+            )}
+          </section>
+        )}
+
+        <nav className="grid grid-cols-2 lg:grid-cols-5 gap-2 bg-white border border-neutral-200 rounded-xl shadow-sm p-2">
           {navItems.map(({ id, label, icon: Icon }) => {
             const isActive = activeSection === id;
 
@@ -789,7 +1037,7 @@ function AdminDashboard({ admin, onLogout }) {
                 </div>
               )}
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 {statCards.map(({ label, value, icon: Icon }) => (
                   <div
                     key={label}
@@ -827,7 +1075,7 @@ function AdminDashboard({ admin, onLogout }) {
                   Cashier Management
                 </div>
                 <h2 className="text-lg font-semibold text-neutral-900">
-                  Create Cashier
+                  {editingCashierId ? 'Edit Cashier' : 'Create Cashier'}
                 </h2>
               </div>
             </div>
@@ -888,11 +1136,7 @@ function AdminDashboard({ admin, onLogout }) {
               {editingCashierId && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingCashierId(null);
-                    setUsername('');
-                    setPassword('');
-                  }}
+                  onClick={resetCashierForm}
                   className="mt-2 sm:mt-0 sm:ml-2 w-full sm:w-auto border border-neutral-200 text-neutral-600 rounded-md px-4 py-2.5 font-medium text-sm hover:bg-neutral-100"
                 >
                   Cancel
@@ -1118,6 +1362,208 @@ function AdminDashboard({ admin, onLogout }) {
             </div>
           </div>
         </section>
+        )}
+
+        {activeSection === 'reports' && (
+          <section className="bg-white border border-orange-200 border-t-4 border-t-orange-500 rounded-lg shadow-sm overflow-hidden">
+            <div className="px-4 py-4 sm:px-5 border-b border-neutral-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-md bg-orange-50 text-orange-700 flex items-center justify-center flex-shrink-0">
+                  <BarChart3 size={20} />
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-orange-700 font-semibold">
+                    Reports
+                  </div>
+                  <h2 className="text-lg font-semibold text-neutral-900">
+                    KOT & Bill Report
+                  </h2>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_180px_auto_auto]">
+                <div>
+                  <label htmlFor="report-start-date" className="block text-xs font-medium text-neutral-600 mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    id="report-start-date"
+                    type="date"
+                    className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={reportStartDate}
+                    onChange={(event) => setReportStartDate(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="report-end-date" className="block text-xs font-medium text-neutral-600 mb-1">
+                    End Date
+                  </label>
+                  <input
+                    id="report-end-date"
+                    type="date"
+                    className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={reportEndDate}
+                    onChange={(event) => setReportEndDate(event.target.value)}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={fetchReport}
+                    disabled={isReportLoading}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-neutral-900 disabled:bg-neutral-300 text-white rounded-md px-4 py-2.5 font-medium text-sm hover:bg-neutral-800"
+                  >
+                    <RefreshCw size={15} />
+                    {isReportLoading ? 'Loading...' : 'Load Report'}
+                  </button>
+                </div>
+                <div>
+                  <label htmlFor="report-download-type" className="block text-xs font-medium text-neutral-600 mb-1">
+                    Download Type
+                  </label>
+                  <select
+                    id="report-download-type"
+                    className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    value={reportDownloadType}
+                    onChange={(event) => setReportDownloadType(event.target.value)}
+                  >
+                    <option value="kot">KOT Report</option>
+                    <option value="bill">Bill Report</option>
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={downloadReportPdf}
+                    disabled={isReportDownloading}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-orange-600 disabled:bg-neutral-300 text-white rounded-md px-4 py-2.5 font-medium text-sm hover:bg-orange-700"
+                  >
+                    <Download size={15} />
+                    {isReportDownloading ? 'Downloading...' : 'Download A4'}
+                  </button>
+                </div>
+              </div>
+
+              {reportError && (
+                <div className="mt-4 text-sm font-medium text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                  {reportError}
+                </div>
+              )}
+
+              {reportData && (
+                <>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      ['Total KOTs', reportData.kot_report.total_kots],
+                      ['Running KOTs', reportData.kot_report.running_kots],
+                      ['Settled KOTs', reportData.kot_report.settled_kots],
+                      ['KOT Amount', `Rs. ${formatMoney(reportData.kot_report.total_amount)}`],
+                      ['Total Bills', reportData.bill_report.total_bills],
+                      ['Bill Amount', `Rs. ${formatMoney(reportData.bill_report.total_amount)}`],
+                      ['Cash', `Rs. ${formatMoney(reportData.bill_report.cash)}`],
+                      ['Online', `Rs. ${formatMoney(reportData.bill_report.online)}`],
+                    ].map(([label, value]) => (
+                      <div key={label} className="border border-neutral-200 rounded-lg p-3 bg-neutral-50">
+                        <div className="text-xs font-medium text-neutral-500">{label}</div>
+                        <div className="mt-1 text-xl font-semibold text-neutral-900">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase text-neutral-500 mb-2">
+                        KOT Report
+                      </h3>
+                      <div className="max-h-80 overflow-auto border border-neutral-200 rounded-md">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-neutral-50 text-neutral-500">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold">KOT</th>
+                              <th className="px-3 py-2 text-left font-semibold">Table</th>
+                              <th className="px-3 py-2 text-left font-semibold">Waiter</th>
+                              <th className="px-3 py-2 text-left font-semibold">Status</th>
+                              <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-100">
+                            {reportData.kot_report.rows.length === 0 ? (
+                              <tr>
+                                <td colSpan="5" className="px-3 py-5 text-center text-neutral-400">
+                                  No KOTs found.
+                                </td>
+                              </tr>
+                            ) : reportData.kot_report.rows.map((kot) => (
+                              <tr key={kot.id}>
+                                <td className="px-3 py-2 font-medium text-neutral-900">#{kot.id}</td>
+                                <td className="px-3 py-2 text-neutral-700">{kot.table_name}</td>
+                                <td className="px-3 py-2 text-neutral-500">{kot.waiter_name}</td>
+                                <td className="px-3 py-2">
+                                  <span className={`rounded px-2 py-1 text-[11px] font-medium ${
+                                    kot.status === 'RUNNING'
+                                      ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                                      : 'bg-green-50 text-green-700 border border-green-100'
+                                  }`}
+                                  >
+                                    {kot.status}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-right text-neutral-900">
+                                  Rs. {formatMoney(kot.total_amount)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase text-neutral-500 mb-2">
+                        Bill Report
+                      </h3>
+                      <div className="max-h-80 overflow-auto border border-neutral-200 rounded-md">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-neutral-50 text-neutral-500">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold">Bill</th>
+                              <th className="px-3 py-2 text-left font-semibold">Table</th>
+                              <th className="px-3 py-2 text-left font-semibold">Method</th>
+                              <th className="px-3 py-2 text-right font-semibold">Cash</th>
+                              <th className="px-3 py-2 text-right font-semibold">Online</th>
+                              <th className="px-3 py-2 text-right font-semibold">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-100">
+                            {reportData.bill_report.rows.length === 0 ? (
+                              <tr>
+                                <td colSpan="6" className="px-3 py-5 text-center text-neutral-400">
+                                  No bills found.
+                                </td>
+                              </tr>
+                            ) : reportData.bill_report.rows.map((bill) => (
+                              <tr key={bill.id}>
+                                <td className="px-3 py-2 font-medium text-neutral-900">#{bill.id}</td>
+                                <td className="px-3 py-2 text-neutral-700">{bill.table_no}</td>
+                                <td className="px-3 py-2 text-neutral-500">{bill.payment_method}</td>
+                                <td className="px-3 py-2 text-right text-neutral-900">Rs. {formatMoney(bill.cash)}</td>
+                                <td className="px-3 py-2 text-right text-neutral-900">Rs. {formatMoney(bill.online)}</td>
+                                <td className="px-3 py-2 text-right font-medium text-neutral-900">
+                                  Rs. {formatMoney(bill.total_amount)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
         )}
 
         {activeSection === 'tables-waiters' && (
@@ -1457,9 +1903,114 @@ function App() {
     setAdmin(null);
   };
 
+  useEffect(() => {
+    let isActive = true;
+
+    const verifySession = async () => {
+      const tokenKey = isAdminRoute ? ADMIN_TOKEN_KEY : CASHIER_TOKEN_KEY;
+      const userKey = isAdminRoute ? ADMIN_USER_KEY : CASHIER_USER_KEY;
+      const user = isAdminRoute ? admin : cashier;
+      const token = localStorage.getItem(tokenKey);
+
+      if (!token || !user) {
+        return;
+      }
+
+      try {
+        const { data } = await api.get('/auth/me', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const verifiedUser = data.cashier;
+        const verifiedType = verifiedUser?.type || 'cashier';
+
+        if (
+          (isAdminRoute && verifiedType !== 'admin') ||
+          (!isAdminRoute && verifiedType !== 'cashier')
+        ) {
+          throw new Error('Invalid user role');
+        }
+
+        if (!isActive) {
+          return;
+        }
+
+        localStorage.setItem(userKey, JSON.stringify(verifiedUser));
+
+        if (isAdminRoute) {
+          setAdmin((currentAdmin) =>
+            currentAdmin?.id === verifiedUser.id &&
+            currentAdmin?.username === verifiedUser.username &&
+            (currentAdmin?.type || 'cashier') === verifiedType
+              ? currentAdmin
+              : verifiedUser,
+          );
+        } else {
+          setCashier((currentCashier) =>
+            currentCashier?.id === verifiedUser.id &&
+            currentCashier?.username === verifiedUser.username &&
+            (currentCashier?.type || 'cashier') === verifiedType
+              ? currentCashier
+              : verifiedUser,
+          );
+        }
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        localStorage.removeItem(tokenKey);
+        localStorage.removeItem(userKey);
+
+        if (isAdminRoute) {
+          window.history.pushState({}, '', '/admin');
+          setRoute('/admin');
+          setAdmin(null);
+        } else {
+          window.history.pushState({}, '', '/');
+          setRoute('/');
+          setCashier(null);
+        }
+      }
+    };
+
+    verifySession();
+
+    return () => {
+      isActive = false;
+    };
+  }, [admin, cashier, isAdminRoute]);
+
+  useEffect(() => {
+    const handleInvalidSession = () => {
+      if (isAdminRoute) {
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
+        localStorage.removeItem(ADMIN_USER_KEY);
+        window.history.pushState({}, '', '/admin');
+        setRoute('/admin');
+        setAdmin(null);
+      } else {
+        localStorage.removeItem(CASHIER_TOKEN_KEY);
+        localStorage.removeItem(CASHIER_USER_KEY);
+        window.history.pushState({}, '', '/');
+        setRoute('/');
+        setCashier(null);
+      }
+    };
+
+    window.addEventListener('auth:invalid', handleInvalidSession);
+    return () => window.removeEventListener('auth:invalid', handleInvalidSession);
+  }, [isAdminRoute]);
+
   const openHistory = (date) => {
     window.history.pushState({}, '', `/kot-history?date=${date}`);
     setRoute('/kot-history');
+  };
+
+  const openOldKots = (date) => {
+    window.history.pushState({}, '', `/old-kots?date=${date}`);
+    setRoute('/old-kots');
   };
 
   const closeHistory = () => {
@@ -1492,6 +2043,19 @@ function App() {
     return (
       <KotHistoryPage
         initialDate={params.get('date') || getTodayDate()}
+        initialMode="running"
+        onBack={closeHistory}
+      />
+    );
+  }
+
+  if (route === '/old-kots') {
+    const params = new URLSearchParams(window.location.search);
+
+    return (
+      <KotHistoryPage
+        initialDate={params.get('date') || getTodayDate()}
+        initialMode="old"
         onBack={closeHistory}
       />
     );
@@ -1527,6 +2091,7 @@ function App() {
         <KotMenuBar
           refreshKey={kotStatsRefreshKey}
           onOpenHistory={openHistory}
+          onOpenOldKots={openOldKots}
           tableNo={tableNo}
           waiterId={waiterId}
           onTableNoChange={(value, label = '') => {
@@ -1546,10 +2111,6 @@ function App() {
           waiterLabel={waiterLabel}
           onKotGenerated={() => {
             setKotStatsRefreshKey((value) => value + 1);
-            setTableNo('');
-            setTableLabel('');
-            setWaiterId('');
-            setWaiterLabel('');
           }}
         />
       </div>

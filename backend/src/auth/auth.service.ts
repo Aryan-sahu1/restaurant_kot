@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -27,6 +28,33 @@ export class AuthService {
     password: string,
   ) {
     return this.login(username, password, 'admin');
+  }
+
+  async changeAdminPassword(
+    adminId: number,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const admin = await this.cashierService.findByIdWithPassword(adminId);
+
+    if (!admin || admin.type !== 'admin') {
+      throw new ForbiddenException('Only admin can change this password');
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      currentPassword,
+      admin.password,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    await this.cashierService.updatePassword(admin.id, newPassword);
+
+    return {
+      message: 'Admin password changed successfully',
+    };
   }
 
   private async login(

@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import {
   PassportStrategy,
@@ -35,11 +38,19 @@ export class JwtStrategy extends PassportStrategy(
     role: string;
     type?: string;
   }) {
-    const cashier =
-      await this.cashierService.findById(
-        payload.sub,
-      );
+    try {
+      const cashier =
+        await this.cashierService.findById(
+          payload.sub,
+        );
 
-    return cashier;
+      if ((payload.type || payload.role) !== (cashier.type || 'cashier')) {
+        throw new UnauthorizedException('Invalid user session');
+      }
+
+      return cashier;
+    } catch {
+      throw new UnauthorizedException('Invalid user session');
+    }
   }
 }
